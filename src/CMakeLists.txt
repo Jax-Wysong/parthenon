@@ -168,6 +168,7 @@ add_library(parthenon
   interface/swarm_container.cpp
   interface/swarm_device_context.hpp
   interface/update.cpp
+  interface/update_curl.cpp
   interface/update.hpp
   interface/var_id.hpp
   interface/variable_pack.hpp

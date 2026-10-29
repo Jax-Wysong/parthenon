@@ -68,6 +68,105 @@ template <typename T>
 TaskStatus UpdateWithFluxDivergence(T *data_u0, T *data_u1, const Real gam0,
                                     const Real gam1, const Real beta_dt);
 
+template <TopologicalElement face>
+KOKKOS_FORCEINLINE_FUNCTION
+Real EmfCurlHelper(
+    const int l, const int k, const int j, const int i,
+    const int ndim, const Coordinates_t &coords,
+    const VariableFluxPack<Real> &v){
+
+    if constexpr (face == TE::F1) {
+      // In 1D only the normal face component is evolved, and its curl is zero.
+      // Return before accessing edge fluxes: none are packed in one dimension.
+      if (ndim == 1) return 0.0;
+
+      const Real dz_upper = coords.Volume(CellLevel::same, TE::E3, k, j+1, i); // edge length dz
+      const Real dz_lower = coords.Volume(CellLevel::same, TE::E3, k, j, i);
+      const Real face_area =
+                coords.Volume(CellLevel::same, TE::F1, k, j, i);// area of x face dydz
+      
+      const Real Ez_lower =
+          v.template flux<parthenon::TopologicalType::Edge>(X3DIR, l, k, j, i);    
+      const Real Ez_upper =
+          v.template flux<parthenon::TopologicalType::Edge>(X3DIR, l, k, j+1, i); 
+      Real circulation = Ez_upper*dz_upper - Ez_lower*dz_lower ;
+
+      if (ndim >= 3){
+          const Real dy_upper = coords.Volume(CellLevel::same, TE::E2, k+1, j, i); // edge length dy
+          const Real dy_lower = coords.Volume(CellLevel::same, TE::E2, k, j, i);
+          const Real Ey_lower =
+              v.template flux<parthenon::TopologicalType::Edge>(X2DIR, l, k, j, i);    
+          const Real Ey_upper =
+              v.template flux<parthenon::TopologicalType::Edge>(X2DIR, l, k+1, j, i); 
+          circulation -= Ey_upper*dy_upper - Ey_lower*dy_lower ;
+      }
+
+      return -circulation / face_area;
+
+    } else if constexpr (face == TE::F2) {
+      const Real dz_upper = coords.Volume(CellLevel::same, TE::E3, k, j, i+1); // edge length dz
+      const Real dz_lower = coords.Volume(CellLevel::same, TE::E3, k, j, i);
+      const Real face_area =
+          coords.Volume(CellLevel::same, TE::F2, k, j, i); // area of y face dx*dz
+
+      const Real Ez_lower =
+          v.template flux<parthenon::TopologicalType::Edge>(X3DIR, l, k, j, i);
+      const Real Ez_upper =
+          v.template flux<parthenon::TopologicalType::Edge>(X3DIR, l, k, j, i+1);
+      Real circulation = -(Ez_upper*dz_upper - Ez_lower*dz_lower) ;
+
+      if (ndim >= 3){
+          const Real dx_upper = coords.Volume(CellLevel::same, TE::E1, k+1, j, i); // edge length dx
+          const Real dx_lower = coords.Volume(CellLevel::same, TE::E1, k, j, i);
+          const Real Ex_lower =
+              v.template flux<parthenon::TopologicalType::Edge>(X1DIR, l, k, j, i);
+          const Real Ex_upper =
+              v.template flux<parthenon::TopologicalType::Edge>(X1DIR, l, k+1, j, i);
+          circulation += Ex_upper*dx_upper - Ex_lower*dx_lower ;
+      }
+
+      return -circulation / face_area;
+
+    } else if constexpr (face == TE::F3) {
+      const Real dy_upper = coords.Volume(CellLevel::same, TE::E2, k, j, i+1); // edge length dy
+      const Real dy_lower = coords.Volume(CellLevel::same, TE::E2, k, j, i);
+      const Real dx_upper = coords.Volume(CellLevel::same, TE::E1, k, j+1, i); // edge length dx
+      const Real dx_lower = coords.Volume(CellLevel::same, TE::E1, k, j, i);
+      const Real face_area =
+          coords.Volume(CellLevel::same, TE::F3, k, j, i); // area of z face dx*dy
+
+      const Real Ey_lower =
+          v.template flux<parthenon::TopologicalType::Edge>(X2DIR, l, k, j, i);
+      const Real Ey_upper =
+          v.template flux<parthenon::TopologicalType::Edge>(X2DIR, l, k, j, i+1);
+      const Real Ex_lower =
+          v.template flux<parthenon::TopologicalType::Edge>(X1DIR, l, k, j, i);
+      const Real Ex_upper =
+          v.template flux<parthenon::TopologicalType::Edge>(X1DIR, l, k, j+1, i);
+
+      Real circulation = Ey_upper*dy_upper - Ey_lower*dy_lower ;
+      circulation -= Ex_upper*dx_upper - Ex_lower*dx_lower ;
+
+      return -circulation / face_area;
+    }
+
+    }
+
+// Write -curl(E) to the selected face-centered RHS fields.
+// Reads associated edge fluxes from input. Updates F1 in 1D (zero RHS), F1/F2
+// in 2D, and all faces in 3D; transverse components are handled by the caller.
+template <typename T>
+TaskStatus EmfCurl(
+    T *input, T *rhs,
+    const std::vector<std::string> &field_names);
+
+template <typename T>
+TaskStatus UpdateWithEmfCurl(
+    T *data_u0, T *data_u1,
+    const Real gam0, const Real gam1, const Real beta_dt,
+    const std::vector<std::string> &field_names);
+
+
 template <typename F, typename T>
 TaskStatus WeightedSumData(const F &flags, T *in1, T *in2, const Real w1, const Real w2,
                            T *out) {
